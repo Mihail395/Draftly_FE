@@ -181,7 +181,7 @@ All calls go through the Axios instance so the JWT token is always attached auto
 
 ### `userAPI.ts` → `/api/v1/users`
 - `getUserById(id)` → `GET /:id`
-- `updateUser(id, request)` → `PUT /:id`
+- `updateUser(id, request)` → `PUT /me`
 - `searchUsersByEmail(email)` → `GET /search?email=`
 
 ---
@@ -244,7 +244,7 @@ On `logout()`: clear `localStorage`, clear context, redirect to `/login`
 
 - **Primary color:** Microsoft Word blue — `#2B579A`
 - **Dark primary:** `#185ABD`
-- **Background:** `#F5F5F5` (light grey like Word's background)
+- **Background:** `#F5F5F5` (light gray like Word's background)
 - **Paper/Card:** `#FFFFFF`
 - **Font:** Roboto (MUI default)
 - **Mode:** Light only
