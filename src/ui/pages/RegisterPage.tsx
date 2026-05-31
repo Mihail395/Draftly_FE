@@ -62,7 +62,6 @@ const RegisterPage = () => {
                 // Clear the email value first
                 resetField("email");
                 // Then set the error after a tiny delay so React Hook Form
-                // processes the resetField first, otherwise the error gets cleared
                 setTimeout(() => {
                     setError("email", {
                         type: "manual",

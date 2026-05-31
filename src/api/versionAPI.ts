@@ -1,5 +1,5 @@
 import api from '../axios/axiosInstance'
-import type { VersionResponse } from './types/version'
+import type {VersionContentResponse, VersionResponse} from './types/version'
 import type { DocumentResponse } from './types/document'
 
 const versionAPI = {
@@ -9,6 +9,16 @@ const versionAPI = {
             `/api/v1/documents/${documentId}/versions`
         )
         return response.data
+    },
+
+    getVersionContent: async (
+        documentId: string,
+        versionId: string
+    ): Promise<VersionContentResponse> => {
+        const response = await api.get<VersionContentResponse>(
+            `/api/v1/documents/${documentId}/versions/${versionId}`
+        );
+        return response.data;
     },
 
     restoreVersion: async (

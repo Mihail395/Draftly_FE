@@ -13,9 +13,9 @@ interface UseDocumentReturn {
 }
 
 const useDocument = (id: string): UseDocumentReturn => {
-    const {showSnackbar} = useSnackbar();
+    const { showSnackbar } = useSnackbar();
     const [document, setDocument] = useState<DocumentResponse | null>(null);
-    const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
     const [isSaving, setIsSaving] = useState<boolean>(false);
 
     const fetchDocument = useCallback(async () => {
@@ -43,12 +43,14 @@ const useDocument = (id: string): UseDocumentReturn => {
         try {
             const updated = await documentAPI.updateDocument(id, request);
             setDocument(updated);
-            showSnackbar("Document saved successfully.", "success");
+            // No success snackbar — SaveStatus indicator handles this
         } catch (err) {
             showSnackbar(
                 err instanceof Error ? err.message : "Failed to save document.",
                 "error"
             );
+            // Re-throw so the caller (EditorPage) can catch and set its own error state
+            throw err;
         } finally {
             setIsSaving(false);
         }
@@ -64,6 +66,7 @@ const useDocument = (id: string): UseDocumentReturn => {
                 err instanceof Error ? err.message : "Failed to rename document.",
                 "error"
             );
+            throw err;
         }
     }, [id, showSnackbar]);
 

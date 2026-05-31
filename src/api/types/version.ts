@@ -3,3 +3,10 @@ export interface VersionResponse {
     savedByName: string
     createdAt: string
 }
+
+export interface VersionContentResponse {
+    id: string;
+    content: string | null;
+    savedByName: string;
+    createdAt: string;
+}

@@ -1,356 +1,161 @@
-# CLAUDE.md — Draftly Frontend
+# Draftly Frontend
 
-## Project Overview
-
-Frontend for Draftly — a Google Docs-like collaborative document editing application.
-Built with React TypeScript + Vite. Connects to Spring Boot backend at `http://localhost:8080`.
-Local development only — no deployment/hosting required.
-
----
+React + TypeScript + Vite app for "Draftly" — a Google Docs-like collaborative document editing app. Local development only, no deployment.
 
 ## Tech Stack
-
-| Concern            | Choice                          |
-|--------------------|---------------------------------|
-| Language           | TypeScript                      |
-| Framework          | React 18                        |
-| Build Tool         | Vite (port 3000)                |
-| UI Library         | Material UI (MUI v5)            |
-| Rich Text Editor   | TipTap                          |
-| HTTP Client        | Axios                           |
-| Routing            | React Router v6                 |
-| State Management   | React Context API               |
-| Form Handling      | React Hook Form                 |
-| PDF Export         | jsPDF + html2canvas             |
-| Word Import        | mammoth.js                      |
-
----
-
-## Dependencies
-
-### MUI
-- `@mui/material`
-- `@mui/icons-material`
-- `@emotion/react`
-- `@emotion/styled`
-
-### TipTap Extensions
-- `@tiptap/react`
-- `@tiptap/starter-kit` — bold, italic, headings, lists, blockquote, code
-- `@tiptap/extension-underline` — underline text
-- `@tiptap/extension-text-align` — left, center, right, justify alignment
-- `@tiptap/extension-link` — clickable hyperlinks
-- `@tiptap/extension-image` — insert images
-- `@tiptap/extension-table` — insert and edit tables
-- `@tiptap/extension-table-row`
-- `@tiptap/extension-table-cell`
-- `@tiptap/extension-table-header`
-- `@tiptap/extension-placeholder` — placeholder text when editor is empty
-- `@tiptap/extension-character-count` — word and character count
-- `@tiptap/extension-code-block-lowlight` — syntax highlighted code blocks
-- `@tiptap/extension-task-list` — checkbox todo lists
-- `@tiptap/extension-task-item`
-- `@tiptap/extension-typography` — smart quotes, em dashes
-- `@tiptap/extension-color` — text color picker
-- `@tiptap/extension-text-style` — required by Color extension
-- `@tiptap/extension-highlight` — text highlighting
-
-### Other
-- `axios`
-- `react-router-dom`
-- `react-hook-form`
-- `jspdf`
-- `html2canvas`
-- `mammoth`
-- `lowlight` — required by CodeBlockLowlight extension
-
----
+- React 19
+- TypeScript
+- Vite 8 (port 3000, locked via `strictPort: true`)
+- MUI v6.4.0 + Emotion (`@mui/icons-material`)
+- TipTap v3.23.6 (all extensions same version), `@tiptap/pm` peer dep
+- React Router v6
+- React Hook Form 7.76.1 (pinned, no `^`)
+- axios 1.16.1 (pinned, no `^` — supply chain safety)
+- npm `.npmrc`: `min-release-age=3`
+- Mammoth (planned for .docx import — not yet integrated)
+- jspdf was removed temporarily — will re-add for PDF export later
 
 ## Project Structure
 
 ```
 src/
 ├── api/
-│   ├── authAPI.ts               ← register, login, getCurrentUser
-│   ├── documentAPI.ts           ← CRUD, search, filter, sort, rename
-│   ├── collaboratorAPI.ts       ← share, remove, list collaborators
-│   ├── versionAPI.ts            ← get versions, restore version
-│   ├── userAPI.ts               ← get profile, update, search by email
-│   └── types/
-│       ├── auth.types.ts        ← LoginRequest, RegisterRequest, AuthResponse
-│       ├── document.types.ts    ← DocumentResponse, DocumentSummaryResponse, CreateDocumentRequest, UpdateDocumentRequest, Permission, DocumentFilter, SortField
-│       ├── collaborator.types.ts← ShareDocumentRequest, CollaboratorResponse
-│       ├── version.types.ts     ← VersionResponse
-│       └── user.types.ts        ← UserResponse, UpdateUserRequest
-│
+│   ├── types/  common.ts, auth.ts, user.ts, document.ts, collaborator.ts, version.ts
+│   ├── authAPI.ts, documentAPI.ts, collaboratorAPI.ts, versionAPI.ts, userAPI.ts
+│   └── utils.ts  (getErrorMessage helper that reads err.response.data.message from Axios errors)
 ├── axios/
-│   └── axiosInstance.ts         ← Axios instance with base URL + JWT interceptor + 401 redirect
-│
+│   └── axiosInstance.ts  (JWT interceptor, 401 redirect with isAuthEndpoint check)
 ├── context/
-│   └── AuthContext.tsx          ← Auth state shape: user, token, login(), logout(), isAuthenticated
-│
+│   ├── AuthContext.tsx, SnackbarContext.tsx
 ├── hooks/
-│   ├── useAuth.ts               ← Access AuthContext
-│   ├── useDocuments.ts          ← Fetch and manage documents list for dashboard
-│   ├── useDocument.ts           ← Fetch single document for editor
-│   ├── useCollaborators.ts      ← Fetch and manage collaborators
-│   └── useVersions.ts           ← Fetch and manage version history
-│
+│   ├── useAuth, useDocuments, useDocument, useCollaborators, useVersions,
+│   │   useSnackbar (global via SnackbarContext), useDebounce, useAutoSave
 ├── providers/
-│   └── AuthProvider.tsx         ← Wraps app with AuthContext, restores session on load via /me
-│
+│   ├── AuthProvider.tsx, SnackbarProvider.tsx
+├── theme.ts  (MUI theme — primary #2B579A Word blue, Merriweather serif headings,
+│              Source Sans 3 body. Use MuiCssBaseline not CssBaseline)
+├── tiptap.d.ts  (TipTap type references for all extensions — fixes TS errors with chain commands)
+├── App.tsx, main.tsx
 └── ui/
     ├── components/
-    │   ├── common/
-    │   │   ├── ProtectedRoute.tsx       ← Redirects to /login if not authenticated
-    │   │   ├── LoadingSpinner.tsx       ← MUI CircularProgress wrapper
-    │   │   └── ErrorMessage.tsx         ← MUI Alert error display
-    │   ├── layout/
-    │   │   ├── Navbar.tsx               ← Top navigation bar with logo, user menu, logout
-    │   │   └── PageLayout.tsx           ← Common page wrapper with Navbar
-    │   ├── dashboard/
-    │   │   ├── DocumentCard.tsx         ← Single document card in grid view
-    │   │   ├── DocumentList.tsx         ← Renders documents in grid or list view
-    │   │   ├── DocumentFilters.tsx      ← Filter (ALL/OWNED/SHARED) + Sort controls
-    │   │   └── SearchBar.tsx            ← Debounced document title search input
-    │   ├── editor/
-    │   │   ├── TipTapEditor.tsx         ← Main TipTap editor component with all extensions
-    │   │   ├── EditorToolbar.tsx        ← Formatting toolbar (bold, italic, align, color etc.)
-    │   │   └── EditorMenuBar.tsx        ← Top menu bar (File, Edit, Insert etc.)
-    │   ├── collaboration/
-    │   │   ├── ShareDialog.tsx          ← Dialog for sharing document with users
-    │   │   ├── CollaboratorList.tsx     ← List of collaborators with permission badges
-    │   │   └── UserSearchInput.tsx      ← Search users by email for sharing
-    │   └── versions/
-    │       ├── VersionHistoryPanel.tsx  ← Side panel showing version list
-    │       └── VersionItem.tsx          ← Single version row with restore button
-    │
-    └── pages/
-        ├── LoginPage.tsx                ← Login form
-        ├── RegisterPage.tsx             ← Register form
-        ├── DashboardPage.tsx            ← Document list + search + filters + create button
-        ├── EditorPage.tsx               ← Full document editor page
-        └── ProfilePage.tsx              ← User profile view and edit
+    │   ├── common/         ProtectedRoute (uses Outlet pattern + isLoading check)
+    │   ├── layout/         LandingNavbar, AppNavbar (avatar dropdown menu with initials),
+    │   │                   LandingFooter, LandingLayout, AppLayout
+    │   ├── dashboard/      DashboardHeader (time-aware greeting), DashboardToolbar
+    │   │                   (search/filter/sort/view-toggle), DocumentCard, DocumentListRow,
+    │   │                   DocumentGrid, DocumentList, EmptyState, DocumentCardSkeleton,
+    │   │                   NewDocumentDialog, RenameDialog, DeleteConfirmDialog
+    │   └── editor/         Editor.css (TipTap content styles), SaveStatus, EditableTitle,
+    │       │               LinkDialog, ImageUploadDialog, ColorPickerButton,
+    │       │               EditorToolbar, BubbleMenuBar, TipTapEditor, DocumentBar,
+    │       │               TableFloatingMenu
+    │       └── side-panel/ EditorSidePanel (tabbed drawer), HistoryPanel (with preview/restore),
+    │                       CollaboratorsPanel, SharePanel (debounced user search)
+    └── pages/  LandingPage (placeholder), LoginPage, RegisterPage, DashboardPage,
+                EditorPage, ProfilePage (placeholder)
 ```
 
----
+## Routing (App.tsx)
 
-## Routing
+- `/` → LandingPage (with LandingLayout)
+- `/login`, `/register` → standalone, no layout
+- Protected via `<Route element={<ProtectedRoute />}>` wrapping `<Route element={<AppLayout />}>`:
+  - `/dashboard`, `/documents/:id`, `/profile`
+- Catch-all → `/`
+- ProtectedRoute uses `Outlet` pattern and waits for `AuthProvider`'s `isLoading` before deciding
 
-```
-/                    → redirect to /dashboard if logged in, else /login
-/login               → LoginPage (public)
-/register            → RegisterPage (public)
-/dashboard           → DashboardPage (protected)
-/documents/:id       → EditorPage (protected)
-/profile             → ProfilePage (protected)
-```
+## Auth Flow
 
-All routes except `/login` and `/register` are protected.
-Unauthenticated users are redirected to `/login`.
+- `AuthProvider` on mount calls `GET /api/v1/auth/me` if token exists in localStorage
+- `AuthResponse` has token + email/firstName/lastName/role (NO id)
+- `AuthContext`: user, token, isAuthenticated, isLoading, login(), logout()
+- Axios interceptor: attaches `Bearer <token>`, on 401 → if NOT auth endpoint clears token and redirects to `/login`
+- `getErrorMessage(err, fallback)` in `api/utils.ts` extracts real backend error from Axios error
 
----
+## Design Decisions
 
-## API Layer
+### Theme
+- Word blue `#2B579A` primary
+- Merriweather (Google Fonts CDN) for headings, Source Sans 3 for body, Roboto fallback
+- `borderRadius: 8` global default
+- Theme component overrides use `MuiCssBaseline` not `CssBaseline` (MUI v6)
 
-Each file in `api/` maps directly to a backend controller.
-All calls go through the Axios instance so the JWT token is always attached automatically.
+### Login/Register Pages
+- Centered card with animated radial-gradient mesh background using `::before` pseudo-element + opacity fade (smooth, GPU-accelerated)
+- 3px blue top border accent on card
+- React Hook Form validation
+- Email already-registered error clears email field + shows red error using `setError` + `resetField`, `clearErrors` on typing
 
-### `authAPI.ts` → `/api/v1/auth`
-- `register` → `POST /register`
-- `login` → `POST /login`
-- `getCurrentUser` → `GET /me`
+### Dashboard
+- Greeting time-aware: `Working late` (<5), `Good morning` (<12), `Good afternoon` (<18), `Good evening` (else)
+- Document cards with hover lift + staggered fade-in animation (`animationDelay: idx * 40`)
+- Skeleton loading using MUI Skeleton component
+- 300ms debounced search via `useDebounce` hook (client-side filtering on already-fetched docs)
+- Grid/List view toggle
+- NewDocumentDialog asks for title first (innovative flow vs Google Docs auto-create)
+- Dialogs use `key` prop in parent to force remount instead of useEffect to reset state (avoids ESLint `react-hooks/set-state-in-effect`)
 
-### `documentAPI.ts` → `/api/v1/documents`
-- `getAllDocuments(filter, sort)` → `GET /`
-- `createDocument(request)` → `POST /`
-- `getDocumentById(id)` → `GET /:id`
-- `updateDocument(id, request)` → `PUT /:id`
-- `deleteDocument(id)` → `DELETE /:id`
-- `renameDocument(id, title)` → `PATCH /:id/rename`
-- `searchDocuments(title)` → `GET /search?title=`
+### Editor (most complex page)
+- **DocumentBar** (sticky) — title (inline editable), save status, permission badge, History/Share/Export/Save buttons
+- **EditorToolbar** (scrolls with content) — TipTap formatting controls
+- **Paper-like centered editor surface** (max-width 880px, generous padding)
+- **TipTap v3** with extensions: StarterKit (link disabled), Underline, TextAlign, Link (extended with `inclusive: false`), Image, Table set, TaskList/Item, Placeholder, CharacterCount, Typography, TextStyle, Color, Highlight
+- **Custom keyboard handling**: Tab indents in lists / inserts spaces in text, Ctrl+Click opens links in new tab
+- **Auto-save** every 3s after stop typing + manual Ctrl+S
+- **SaveStatus** next to title: Saved / Saving / Unsaved / Error
+- **BubbleMenuBar** dark pill appears on text selection with Bold/Italic/Underline/Strike/Code/Link/RemoveLink
+- **TableFloatingMenu** appears at bottom when cursor inside table — add/remove rows/cols, delete table
+- **Right side panel** (persistent Drawer 380px, pushes editor) with tabs: History, People, Share
+- **Version preview** loads version content into editor read-only; main page banner shows when previewing with Exit/Restore buttons
+- **Image upload** by URL only (file upload = TODO)
+- Editor saves on `visibilitychange` (tab switch) in addition to beforeunload
 
-### `collaboratorAPI.ts` → `/api/v1/documents/:id/collaborators`
-- `getCollaborators(documentId)` → `GET /`
-- `addCollaborator(documentId, request)` → `POST /`
-- `removeCollaborator(documentId, userId)` → `DELETE /:userId`
+## MUI v6 Migration Notes (Critical)
 
-### `versionAPI.ts` → `/api/v1/documents/:id/versions`
-- `getVersions(documentId)` → `GET /`
-- `restoreVersion(documentId, versionId)` → `PUT /:versionId/restore`
+- `Grid` → `Grid2` from `@mui/material/Grid2`, uses `size={{ xs: 6 }}` syntax
+- `PaperProps` → `slotProps={{ paper: {...} }}` on Menu/Dialog
+- `CssBaseline` override key in theme is `MuiCssBaseline` not `CssBaseline`
+- `BubbleMenu` import path: `@tiptap/react/menus`
+- `TextStyle` is named export: `import { TextStyle } from "@tiptap/extension-text-style"`
+- `Color` is also named export
+- TipTap v3: `Table` extension consolidates Table/TableRow/TableCell/TableHeader; `TaskList`/`TaskItem` come from `@tiptap/extension-list`
+- TipTap v3 requires `@tiptap/pm` peer dependency
+- Use `immediatelyRender: false` in useEditor for SSR safety
+- `e.returnValue` in beforeunload is deprecated — use only `e.preventDefault()`
 
-### `userAPI.ts` → `/api/v1/users`
-- `getUserById(id)` → `GET /:id`
-- `updateUser(id, request)` → `PUT /me`
-- `searchUsersByEmail(email)` → `GET /search?email=`
+## ESLint Patterns Used
 
----
+- `void fetch();` inside useEffect to handle async functions
+- `err instanceof Error ? err.message : "fallback"` for error handling (or use `getErrorMessage()` helper)
+- Hooks must be called BEFORE any early returns (rule of hooks) — use `<Navigate>` component for redirects
+- `key` prop pattern on dialogs to force remount instead of useEffect resetting state
+- `tiptap.d.ts` file with `/// <reference types="..." />` lines for all TipTap extensions to fix TypeScript chain command errors
+- Some `// eslint-disable-next-line react-hooks/set-state-in-effect` comments where the pattern is intentional and correct
 
-## Types
+## Known Issues / Recent Bug
 
-All types in `api/types/` mirror the backend DTOs exactly.
-Use the same field names as the backend response JSON.
+- **Editor 500 errors on large content saves** — last reported issue. Restore version also broken. Backend Spring Boot logs need to be inspected for the actual stack trace.
+- Likely candidates: backend `extractPlainTextLength` regex parser hanging, or Spring Boot request size limit.
 
-### `auth.types.ts`
-- `LoginRequest` — email, password
-- `RegisterRequest` — firstName, lastName, email, password
-- `AuthResponse` — token, email, firstName, lastName, role
+## Open TODOs (Frontend)
 
-### `document.types.ts`
-- `DocumentSummaryResponse` — id, title, ownerName, permission, createdAt, updatedAt
-- `DocumentResponse` — id, title, content, ownerName, permission, createdAt, updatedAt
-- `CreateDocumentRequest` — title
-- `UpdateDocumentRequest` — title, content
-- `Permission` — union type: 'OWNER' | 'EDIT' | 'VIEW'
-- `DocumentFilter` — union type: 'ALL' | 'OWNED' | 'SHARED'
-- `SortField` — union type: 'TITLE' | 'CREATED_AT' | 'UPDATED_AT'
+- **Critical: Fix the 500 errors on save** — backend issue but visible here
+- PDF export (jsPDF + html2canvas) — removed from deps, need to re-add
+- File upload for images (currently URL only) — needs backend endpoint first
+- `.docx`/`.md`/`.txt` import using mammoth
+- Pagination support in hooks when backend adds it
+- ProfilePage actual implementation (currently placeholder — needs view/edit firstName, lastName)
+- LandingPage hero/features/CTA implementation (currently placeholder)
+- Address any remaining ESLint `react-hooks/set-state-in-effect` warnings throughout the app
 
-### `collaborator.types.ts`
-- `CollaboratorResponse` — userId, email, fullName, permission
-- `ShareDocumentRequest` — email, permission ('EDIT' | 'VIEW')
+## Development Notes
 
-### `version.types.ts`
-- `VersionResponse` — id, savedByName, createdAt
+- User on Windows, IntelliJ Ultimate, username "mihai"
+- Project located at `C:\Users\mihai\Desktop\Faks\VP_2025\Draftly\Draftly_FE\`
+- Vite locked to port 3000 in `vite.config.ts`
+- Google Fonts loaded via CDN in `index.html` — internet required for fonts to load (graceful fallback to default serif/sans-serif)
+- npm packages pinned (no `^`) for supply chain safety; `min-release-age=3` in `.npmrc`
 
-### `user.types.ts`
-- `UserResponse` — id, email, firstName, lastName
-- `UpdateUserRequest` — firstName, lastName
+## Backend Reference
 
----
-
-## Axios Instance
-
-- Base URL: `http://localhost:8080`
-- Request interceptor: reads token from `localStorage` and attaches `Authorization: Bearer <token>` header to every request
-- Response interceptor: on 401 response, clears token from `localStorage` and redirects to `/login`
-
----
-
-## Auth Context
-
-Stores globally: `user` (UserResponse), `token` (string), `isAuthenticated` (boolean)
-Exposes: `login(token, user)`, `logout()`
-
-On app load (`AuthProvider`):
-- If token exists in `localStorage` → call `GET /api/v1/auth/me` to restore the user session
-- If `/me` fails (expired token) → clear token and treat as logged out
-
-On `login()`: save token to `localStorage`, set user and token in context
-On `logout()`: clear `localStorage`, clear context, redirect to `/login`
-
----
-
-## Theme & Styling
-
-- **Primary color:** Microsoft Word blue — `#2B579A`
-- **Dark primary:** `#185ABD`
-- **Background:** `#F5F5F5` (light gray like Word's background)
-- **Paper/Card:** `#FFFFFF`
-- **Font:** Roboto (MUI default)
-- **Mode:** Light only
-
-Define theme in `theme.ts` at the root of `src/` and wrap the app with `ThemeProvider`.
-
----
-
-## TipTap Editor
-
-- Editor content is stored and sent to backend as a **JSON string**
-- When loading a document, parse the JSON string back into TipTap editor format
-- If content is `null` (new document), initialize editor with empty content
-- Editor is **read-only** when the current user's permission is `VIEW`
-- Show character and word count using `CharacterCount` extension
-
----
-
-## Forms
-
-All forms use **React Hook Form** with MUI `TextField` components.
-Validation is handled by React Hook Form rules — no manual state for errors.
-Forms: LoginPage, RegisterPage, ShareDialog, ProfilePage.
-
----
-
-## Coding Conventions
-
-- All components are functional components with TypeScript
-- Use custom hooks for all data fetching — never call API directly from components
-- All API types mirror backend DTOs exactly — same field names, same structure
-- Use MUI components for all UI — avoid custom CSS unless absolutely necessary
-- Use React Hook Form for all forms
-- Always handle loading and error states in components that fetch data
-- Never store sensitive data in `localStorage` except the JWT token
-- Use `async/await` with `try/catch` for all API calls
-- Use `Permission` type to conditionally render UI (e.g. hide edit button for VIEW users)
-
----
-
-## Permission-Based UI Rules
-
-| Action | OWNER | EDIT | VIEW |
-|---|---|---|---|
-| Edit document content | ✅ | ✅ | ❌ (read-only editor) |
-| Save document | ✅ | ✅ | ❌ (no save button) |
-| Rename document | ✅ | ✅ | ❌ |
-| Delete document | ✅ | ❌ | ❌ |
-| Share document | ✅ | ❌ | ❌ |
-| Remove collaborator | ✅ | ❌ | ❌ |
-| View version history | ✅ | ✅ | ✅ |
-| Restore version | ✅ | ✅ | ❌ |
-
----
-
-## Pages Overview
-
-### `LoginPage`
-- Email + password form using React Hook Form
-- On success: save token + user to context and localStorage, redirect to `/dashboard`
-- Link to `/register`
-
-### `RegisterPage`
-- firstName, lastName, email, password form using React Hook Form
-- On success: same as login (auto logged in after register)
-- Link to `/login`
-
-### `DashboardPage`
-- Fetches all documents via `useDocuments` hook
-- Search bar (debounced) filters by title
-- Filter tabs: ALL / OWNED / SHARED WITH ME
-- Sort controls: Title / Created Date / Last Modified
-- Toggle between grid and list view
-- Create document button → dialog for title input → redirect to editor
-- Each document card shows: title, owner name, permission badge, last modified
-- Right click or menu on card: rename, delete (OWNER only)
-
-### `EditorPage`
-- Fetches document by ID via `useDocument` hook
-- Editable title at the top
-- Full TipTap editor with toolbar
-- Save button → calls `updateDocument` → shows saved indicator
-- Unsaved changes indicator when content has been modified
-- Version history panel (toggle open/close from toolbar)
-- Share dialog (OWNER only) — search users by email, assign permission
-- Collaborators panel — list of people with access
-- Export PDF button
-- Import file button (.docx, .md, .txt)
-- Read-only mode when permission is VIEW
-
-### `ProfilePage`
-- Shows current user's email, firstName, lastName
-- Edit form for firstName and lastName using React Hook Form
-- Save button calls `updateUser`
-
----
-
-## Local Development Setup
-
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-2. Start the dev server:
-   ```bash
-   npm run dev
-   ```
-3. App runs at: `http://localhost:3000`
-4. Backend must be running at: `http://localhost:8080`
+Backend at `http://localhost:8080`. CORS configured to allow `http://localhost:3000`. See backend CLAUDE.md for endpoint list. JWT stored in `localStorage` under key `token`.
