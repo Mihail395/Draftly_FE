@@ -14,6 +14,10 @@ const userAPI = {
         return response.data
     },
 
+    changePassword: async (request: ChangePasswordRequest): Promise<void> => {
+        await api.put(`/api/v1/users/me/password`, request)
+    },
+
     searchUsersByEmail: async (
         email: string,
         page: number = 0,

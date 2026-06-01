@@ -8,3 +8,9 @@ export interface UpdateUserRequest {
     firstName: string
     lastName: string
 }
+
+export interface ChangePasswordRequest {
+    currentPassword: string;
+    newPassword: string;
+    confirmNewPassword: string;
+}

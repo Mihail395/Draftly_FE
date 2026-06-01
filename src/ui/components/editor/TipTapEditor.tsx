@@ -51,6 +51,7 @@ const TipTapEditor = ({
             StarterKit.configure({
                 // We add Link, Underline etc. separately for more control
                 link: false,
+                underline: false,
             }),
             Underline,
             TextAlign.configure({

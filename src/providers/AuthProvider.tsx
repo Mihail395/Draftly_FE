@@ -60,12 +60,22 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         setUser(null);
     }, []);
 
+    const refreshUser = useCallback(async () => {
+        try {
+            const currentUser = await authAPI.getCurrentUser();
+            setUser(currentUser);
+        } catch (error) {
+            console.error("Failed to refresh user", error);
+        }
+    }, []);
+
     const value: AuthContextType = {
         user,
         token,
         isAuthenticated: token !== null,
         login,
         logout,
+        refreshUser,
         isLoading,
     };
 

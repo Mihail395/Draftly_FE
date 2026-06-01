@@ -19,6 +19,10 @@ export interface AuthContextType {
     // Clears localStorage and resets context to unauthenticated state
     logout: () => void;
 
+    // Re-fetches the current user from the backend and updates context
+    // Used after profile updates (e.g. name change) so the UI reflects the new data
+    refreshUser: () => Promise<void>;
+
     // True while AuthProvider is checking localStorage for an existing token
     // and calling /me to restore the session on app load
     // Prevents the app from flashing the login page before session is restored
