@@ -7,6 +7,7 @@ import {
     Avatar,
     Divider,
     Tooltip,
+    Pagination,
 } from "@mui/material";
 import RestoreIcon from "@mui/icons-material/Restore";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
@@ -19,6 +20,9 @@ interface HistoryPanelProps {
     isRestoring: boolean;
     previewingVersionId: string | null;
     canRestore: boolean;
+    totalPages: number;
+    currentPage: number;
+    onPageChange: (page: number) => void;
     onPreview: (versionId: string) => void;
     onExitPreview: () => void;
     onRestore: (versionId: string) => Promise<void>;
@@ -59,6 +63,9 @@ const HistoryPanel = ({
                           isRestoring,
                           previewingVersionId,
                           canRestore,
+                          totalPages,
+                          currentPage,
+                          onPageChange,
                           onPreview,
                           onExitPreview,
                           onRestore,
@@ -263,6 +270,19 @@ const HistoryPanel = ({
                     </Box>
                 );
             })}
+
+            {totalPages > 1 && (
+                <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+                    <Pagination
+                        count={totalPages}
+                        page={currentPage + 1}
+                        onChange={(_, value) => onPageChange(value - 1)}
+                        color="primary"
+                        shape="rounded"
+                        size="small"
+                    />
+                </Box>
+            )}
         </Box>
     );
 };

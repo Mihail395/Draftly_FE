@@ -1,12 +1,18 @@
 import api from '../axios/axiosInstance'
 import type {VersionContentResponse, VersionResponse} from './types/version'
 import type { DocumentResponse } from './types/document'
+import type { PageResponse } from './types/common'
 
 const versionAPI = {
 
-    getVersions: async (documentId: string): Promise<VersionResponse[]> => {
-        const response = await api.get<VersionResponse[]>(
-            `/api/v1/documents/${documentId}/versions`
+    getVersions: async (
+        documentId: string,
+        page: number = 0,
+        size: number = 20
+    ): Promise<PageResponse<VersionResponse>> => {
+        const response = await api.get<PageResponse<VersionResponse>>(
+            `/api/v1/documents/${documentId}/versions`,
+            { params: { page, size } }
         )
         return response.data
     },

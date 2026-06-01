@@ -50,10 +50,10 @@ const SharePanel = ({ existingCollaboratorEmails, onShare }: SharePanelProps) =>
         const search = async () => {
             setIsSearching(true);
             try {
-                const users = await userAPI.searchUsersByEmail(debouncedSearch);
+                const data = await userAPI.searchUsersByEmail(debouncedSearch);
                 if (!cancelled) {
                     // Filter out users who are already collaborators
-                    const filtered = users.filter(
+                    const filtered = data.content.filter(
                         (u) => !existingCollaboratorEmails.includes(u.email)
                     );
                     setResults(filtered);

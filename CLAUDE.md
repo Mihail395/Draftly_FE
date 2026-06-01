@@ -96,8 +96,9 @@ src/
 - Dialogs use `key` prop in parent to force remount instead of useEffect to reset state (avoids ESLint `react-hooks/set-state-in-effect`)
 
 ### Editor (most complex page)
-- **DocumentBar** (sticky) — title (inline editable), save status, permission badge, History/Share/Export/Save buttons
-- **EditorToolbar** (scrolls with content) — TipTap formatting controls
+- **DocumentBar** (NOT sticky — scrolls away) — title (inline editable), save status, permission badge, History/Share/Export/Save buttons
+- **EditorToolbar** (sticky at `top: 60`) — TipTap formatting controls, takes over the DocumentBar position when scrolling
+- **Preview Banner** (sticky at `top: 108`, below toolbar) — shown when previewing an older version, has Exit/Restore buttons
 - **Paper-like centered editor surface** (max-width 880px, generous padding)
 - **TipTap v3** with extensions: StarterKit (link disabled), Underline, TextAlign, Link (extended with `inclusive: false`), Image, Table set, TaskList/Item, Placeholder, CharacterCount, Typography, TextStyle, Color, Highlight
 - **Custom keyboard handling**: Tab indents in lists / inserts spaces in text, Ctrl+Click opens links in new tab
@@ -109,6 +110,14 @@ src/
 - **Version preview** loads version content into editor read-only; main page banner shows when previewing with Exit/Restore buttons
 - **Image upload** by URL only (file upload = TODO)
 - Editor saves on `visibilitychange` (tab switch) in addition to beforeunload
+
+### Save Status Management (CRITICAL — RECENTLY FIXED)
+- Single source of truth: `EditorPage` manages `saveState` directly inside `handleAutoSave`
+- `setSaveState("saving")` at start of save, `setSaveState("saved")` on success, `setSaveState("error")` on failure
+- `suppressUpdateRef` (useRef) prevents programmatic content changes (preview/exit/restore) from falsely marking the document as unsaved
+- `setEditorContentSilent()` helper wraps all `editor.commands.setContent()` calls to set the suppression flag
+- `useDocument` hook does NOT show success snackbar on save — SaveStatus indicator handles this
+- `useDocument` re-throws errors so `EditorPage` can set its own error state
 
 ## MUI v6 Migration Notes (Critical)
 
@@ -132,26 +141,52 @@ src/
 - `tiptap.d.ts` file with `/// <reference types="..." />` lines for all TipTap extensions to fix TypeScript chain command errors
 - Some `// eslint-disable-next-line react-hooks/set-state-in-effect` comments where the pattern is intentional and correct
 
-## Known Issues / Recent Bug
+## Recent Fixes Applied (Reference)
 
-- **Editor 500 errors on large content saves** — last reported issue. Restore version also broken. Backend Spring Boot logs need to be inspected for the actual stack trace.
-- Likely candidates: backend `extractPlainTextLength` regex parser hanging, or Spring Boot request size limit.
+1. **Save status stuck on "Saving..."** — removed useEffect watching `isSaving`; `EditorPage.handleAutoSave` now manages save state directly with single source of truth
+2. **False "Unsaved changes" after preview/restore** — `suppressUpdateRef` flag + `setEditorContentSilent()` helper prevent programmatic content changes from triggering update events
+3. **Toolbar visibility while scrolling** — DocumentBar is NOT sticky, EditorToolbar IS sticky at `top: 60`. When scrolling, DocumentBar scrolls away and toolbar takes its place
+4. **Preview banner positioning** — `top: 108` to sit below the sticky toolbar (toolbar at 60 + ~48 toolbar height)
+5. **No success snackbar spam** — `useDocument.updateDocument` no longer shows snackbar on success
+6. **Errors re-thrown from hooks** — `useDocument.updateDocument` re-throws so EditorPage can catch and show error state
+7. **Tab key handling** — always preventDefault, indents in lists or inserts spaces in regular text
+8. **Link "inclusive: false"** — typing after a link does NOT extend the link mark
+9. **Ctrl+Click on link** — opens link in new tab even in edit mode
+10. **Editor focus outline removed** — aggressive CSS in Editor.css with multiple selectors
+
+## Known Issues
+
+- None currently — all major bugs from recent sessions are fixed
 
 ## Open TODOs (Frontend)
 
-- **Critical: Fix the 500 errors on save** — backend issue but visible here
+### High Priority — Scaling Improvements (NEXT)
+- **Pagination** support in hooks/components when backend adds it:
+  - `useDocuments` should accept `page` and `size` params
+  - Dashboard should show pagination controls
+  - Same for `useVersions` and user search in SharePanel
+- **Move content length to frontend**:
+  - In `EditorPage.handleAutoSave`, calculate `editor.getText().length` (TipTap built-in)
+  - Add `contentLength` field to `UpdateDocumentRequest` type
+  - Pass it in the API call — backend will use it instead of recalculating
+
+### Other TODOs
 - PDF export (jsPDF + html2canvas) — removed from deps, need to re-add
 - File upload for images (currently URL only) — needs backend endpoint first
 - `.docx`/`.md`/`.txt` import using mammoth
-- Pagination support in hooks when backend adds it
 - ProfilePage actual implementation (currently placeholder — needs view/edit firstName, lastName)
 - LandingPage hero/features/CTA implementation (currently placeholder)
 - Address any remaining ESLint `react-hooks/set-state-in-effect` warnings throughout the app
+- Code-split editor page via `React.lazy()` for smaller initial dashboard bundle
 
 ## Development Notes
 
-- User on Windows, IntelliJ Ultimate, username "mihai"
-- Project located at `C:\Users\mihai\Desktop\Faks\VP_2025\Draftly\Draftly_FE\`
+- User on Windows, IntelliJ Ultimate, username "Mishoe"
+- Project located at `C:\Users\Mishoe\Desktop\Faks\VebP_2025\Draftly\Draftly_FE\`
+  - Parent folder `Draftly\` contains both `Draftly_BE\` and `Draftly_FE\`
+  - Can open parent folder in IntelliJ to work on both at once
+  - Backend and frontend are SEPARATE git repos
+- Claude Code can be used from parent folder for full-stack changes
 - Vite locked to port 3000 in `vite.config.ts`
 - Google Fonts loaded via CDN in `index.html` — internet required for fonts to load (graceful fallback to default serif/sans-serif)
 - npm packages pinned (no `^`) for supply chain safety; `min-release-age=3` in `.npmrc`

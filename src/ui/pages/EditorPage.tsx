@@ -34,7 +34,15 @@ const EditorPage = () => {
 
     const safeId = id ?? "";
     const { document, isLoading, updateDocument, renameDocument, refetch } = useDocument(safeId);
-    const { versions, isRestoring, restoreVersion, refetch: refetchVersions } = useVersions(safeId);
+    const {
+        versions,
+        isRestoring,
+        restoreVersion,
+        refetch: refetchVersions,
+        totalPages: versionsTotalPages,
+        currentPage: versionsCurrentPage,
+        setPage: setVersionsPage,
+    } = useVersions(safeId);
     const { collaborators, addCollaborator, removeCollaborator } = useCollaborators(safeId);
 
     const [editor, setEditor] = useState<Editor | null>(null);
@@ -64,10 +72,12 @@ const EditorPage = () => {
     const handleAutoSave = useCallback(async (newContent: JSONContent) => {
         if (!document || isReadOnly) return;
         setSaveState("saving");
+        const plainTextLength = editor ? editor.getText().length : 0;
         try {
             await updateDocument({
                 title: document.title,
                 content: JSON.stringify(newContent),
+                contentLength: plainTextLength,
             });
             setSaveState("saved");
             setHasUnsavedChanges(false);
@@ -76,7 +86,7 @@ const EditorPage = () => {
             setSaveState("error");
             showSnackbar(getErrorMessage(err, "Failed to auto-save."), "error");
         }
-    }, [document, isReadOnly, updateDocument, refetchVersions, showSnackbar]);
+    }, [document, isReadOnly, editor, updateDocument, refetchVersions, showSnackbar]);
 
     const { saveNow } = useAutoSave({
         data: content,
@@ -434,6 +444,9 @@ const EditorPage = () => {
                 versionsLoading={false}
                 isRestoring={isRestoring}
                 previewingVersionId={previewingVersionId}
+                versionsTotalPages={versionsTotalPages}
+                versionsCurrentPage={versionsCurrentPage}
+                onVersionsPageChange={setVersionsPage}
                 onPreviewVersion={(versionId) => void handlePreviewVersion(versionId)}
                 onExitPreview={handleExitPreview}
                 onRestoreVersion={handleRestoreVersion}

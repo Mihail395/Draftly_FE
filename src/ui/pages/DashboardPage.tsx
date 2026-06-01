@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { Box, Container } from "@mui/material";
+import { useState, useEffect } from "react";
+import { Box, Container, Pagination } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import DashboardHeader from "../components/dashboard/DashboardHeader";
 import DashboardToolbar from "../components/dashboard/DashboardToolbar";
@@ -28,25 +28,39 @@ const DashboardPage = () => {
     const [sort, setSort] = useState<SortField>("UPDATED_AT");
     const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
-    // Debounce the search input — only triggers filtering after 300ms idle
+    // Debounce the search input — only hits the backend after 300ms idle
     const debouncedSearch = useDebounce(searchInput, 300);
 
-    // Fetch documents based on filter + sort
-    const { documents, isLoading, refetch } = useDocuments(filter, sort);
+    // Fetch documents based on filter + sort + search (paginated, server-side)
+    const { documents, isLoading, refetch, totalPages, currentPage, setPage } = useDocuments(
+        filter,
+        sort,
+        0,
+        20,
+        debouncedSearch
+    );
+
+    // Reset to the first page whenever the search term changes
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setPage(0);
+    }, [debouncedSearch, setPage]);
+
+    // Reset to the first page whenever the filter or sort changes
+    const handleFilterChange = (next: DocumentFilter) => {
+        setPage(0);
+        setFilter(next);
+    };
+
+    const handleSortChange = (next: SortField) => {
+        setPage(0);
+        setSort(next);
+    };
 
     // Dialog state
     const [newDocOpen, setNewDocOpen] = useState<boolean>(false);
     const [renameTarget, setRenameTarget] = useState<DocumentSummaryResponse | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<DocumentSummaryResponse | null>(null);
-
-    // Client-side filtering by title for the search bar
-    // Backend already filtered by permission/filter, search is small enough
-    // to do client-side without an extra API call
-    const filteredDocuments = useMemo(() => {
-        if (!debouncedSearch.trim()) return documents;
-        const q = debouncedSearch.toLowerCase();
-        return documents.filter((d) => d.title.toLowerCase().includes(q));
-    }, [documents, debouncedSearch]);
 
     const handleOpen = (id: string) => {
         navigate(`/documents/${id}`);
@@ -96,7 +110,7 @@ const DashboardPage = () => {
             : filter === "SHARED" ? "Shared with me"
                 : "All";
 
-    const showEmptyState = !isLoading && filteredDocuments.length === 0;
+    const showEmptyState = !isLoading && documents.length === 0;
 
     return (
         <Container maxWidth="xl" sx={{ py: 4 }}>
@@ -106,9 +120,9 @@ const DashboardPage = () => {
                 searchQuery={searchInput}
                 onSearchChange={setSearchInput}
                 filter={filter}
-                onFilterChange={setFilter}
+                onFilterChange={handleFilterChange}
                 sort={sort}
-                onSortChange={setSort}
+                onSortChange={handleSortChange}
                 viewMode={viewMode}
                 onViewModeChange={setViewMode}
             />
@@ -124,7 +138,7 @@ const DashboardPage = () => {
                 <Box>
                     {viewMode === "grid" ? (
                         <DocumentGrid
-                            documents={filteredDocuments}
+                            documents={documents}
                             isLoading={isLoading}
                             onOpen={handleOpen}
                             onRename={(doc) => setRenameTarget(doc)}
@@ -132,12 +146,24 @@ const DashboardPage = () => {
                         />
                     ) : (
                         <DocumentList
-                            documents={filteredDocuments}
+                            documents={documents}
                             isLoading={isLoading}
                             onOpen={handleOpen}
                             onRename={(doc) => setRenameTarget(doc)}
                             onDelete={(doc) => setDeleteTarget(doc)}
                         />
+                    )}
+
+                    {totalPages > 1 && (
+                        <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
+                            <Pagination
+                                count={totalPages}
+                                page={currentPage + 1}
+                                onChange={(_, value) => setPage(value - 1)}
+                                color="primary"
+                                shape="rounded"
+                            />
+                        </Box>
                     )}
                 </Box>
             )}

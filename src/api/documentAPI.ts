@@ -1,15 +1,22 @@
 import api from '../axios/axiosInstance'
 import type { DocumentResponse, DocumentSummaryResponse, CreateDocumentRequest, UpdateDocumentRequest } from './types/document'
-import type { DocumentFilter, SortField } from './types/common'
+import type { DocumentFilter, SortField, PageResponse } from './types/common'
 
 const documentAPI = {
 
     getAllDocuments: async (
         filter: DocumentFilter = 'ALL',
-        sort: SortField = 'UPDATED_AT'
-    ): Promise<DocumentSummaryResponse[]> => {
-        const response = await api.get<DocumentSummaryResponse[]>('/api/v1/documents', {
-            params: { filter, sort }
+        sort: SortField = 'UPDATED_AT',
+        page: number = 0,
+        size: number = 20,
+        search: string = ''
+    ): Promise<PageResponse<DocumentSummaryResponse>> => {
+        const params: Record<string, string | number> = { filter, sort, page, size }
+        if (search.trim()) {
+            params.search = search.trim()
+        }
+        const response = await api.get<PageResponse<DocumentSummaryResponse>>('/api/v1/documents', {
+            params
         })
         return response.data
     },

@@ -34,6 +34,9 @@ interface EditorSidePanelProps {
     versionsLoading: boolean;
     isRestoring: boolean;
     previewingVersionId: string | null;
+    versionsTotalPages: number;
+    versionsCurrentPage: number;
+    onVersionsPageChange: (page: number) => void;
     onPreviewVersion: (versionId: string) => void;
     onExitPreview: () => void;
     onRestoreVersion: (versionId: string) => Promise<void>;
@@ -59,6 +62,9 @@ const EditorSidePanel = ({
                              versionsLoading,
                              isRestoring,
                              previewingVersionId,
+                             versionsTotalPages,
+                             versionsCurrentPage,
+                             onVersionsPageChange,
                              onPreviewVersion,
                              onExitPreview,
                              onRestoreVersion,
@@ -174,6 +180,9 @@ const EditorSidePanel = ({
                         isRestoring={isRestoring}
                         previewingVersionId={previewingVersionId}
                         canRestore={canRestore}
+                        totalPages={versionsTotalPages}
+                        currentPage={versionsCurrentPage}
+                        onPageChange={onVersionsPageChange}
                         onPreview={onPreviewVersion}
                         onExitPreview={onExitPreview}
                         onRestore={onRestoreVersion}
