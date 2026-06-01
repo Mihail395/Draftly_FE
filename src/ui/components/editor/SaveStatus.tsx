@@ -14,7 +14,7 @@ const SaveStatus = ({ state }: SaveStatusProps) => {
         saved: {
             icon: <CheckCircleOutlineIcon sx={{ fontSize: 16 }} />,
             label: "Saved",
-            color: "text.secondary",
+            color: "#2E7D32",
         },
         saving: {
             icon: <CircularProgress size={14} thickness={5} />,
