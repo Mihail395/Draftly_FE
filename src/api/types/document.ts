@@ -19,6 +19,11 @@ export interface DocumentResponse {
     updatedAt: string
 }
 
+export interface CollabAccessResponse {
+    allowed: boolean
+    permission: Permission | null
+}
+
 export interface CreateDocumentRequest {
     title: string
 }

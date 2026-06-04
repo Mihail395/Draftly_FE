@@ -1,5 +1,5 @@
 import api from '../axios/axiosInstance'
-import type { DocumentResponse, DocumentSummaryResponse, CreateDocumentRequest, UpdateDocumentRequest } from './types/document'
+import type { DocumentResponse, DocumentSummaryResponse, CreateDocumentRequest, UpdateDocumentRequest, CollabAccessResponse } from './types/document'
 import type { DocumentFilter, SortField, PageResponse } from './types/common'
 
 const documentAPI = {
@@ -28,6 +28,11 @@ const documentAPI = {
 
     getDocumentById: async (id: string): Promise<DocumentResponse> => {
         const response = await api.get<DocumentResponse>(`/api/v1/documents/${id}`)
+        return response.data
+    },
+
+    checkCollabAccess: async (id: string): Promise<CollabAccessResponse> => {
+        const response = await api.get<CollabAccessResponse>(`/api/v1/documents/${id}/collab-access`)
         return response.data
     },
 

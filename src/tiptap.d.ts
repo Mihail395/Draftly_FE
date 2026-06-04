@@ -8,3 +8,5 @@
 /// <reference types="@tiptap/extension-color" />
 /// <reference types="@tiptap/extension-text-style" />
 /// <reference types="@tiptap/extension-highlight" />
+/// <reference types="@tiptap/extension-collaboration" />
+/// <reference types="@tiptap/extension-collaboration-caret" />

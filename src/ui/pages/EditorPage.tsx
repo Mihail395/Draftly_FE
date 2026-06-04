@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useParams, Navigate } from "react-router-dom";
 import {
     Box,
@@ -15,6 +15,7 @@ import type { Editor, JSONContent } from "@tiptap/react";
 import DocumentBar from "../components/editor/DocumentBar";
 import EditorToolbar from "../components/editor/EditorToolbar";
 import TipTapEditor from "../components/editor/TipTapEditor";
+import VersionPreview from "../components/editor/VersionPreview";
 import EditorSidePanel from "../components/editor/side-panel/EditorSidePanel";
 import type { SidePanelTab } from "../components/editor/side-panel/EditorSidePanel";
 import type { SaveState } from "../components/editor/SaveStatus";
@@ -24,16 +25,28 @@ import useVersions from "../../hooks/useVersions";
 import useCollaborators from "../../hooks/useCollaborators";
 import useSnackbar from "../../hooks/useSnackbar";
 import useAutoSave from "../../hooks/useAutoSave";
+import useAuth from "../../hooks/useAuth";
+import useCollaboration from "../../hooks/useCollaboration";
 import versionAPI from "../../api/versionAPI";
 import { getErrorMessage } from "../../api/utils";
 import type { ShareDocumentRequest } from "../../api/types/collaborator";
 
+// Distinct, readable cursor-label colors for live collaboration.
+const CURSOR_COLORS = [
+    "#2B579A", "#D32F2F", "#388E3C", "#7B1FA2",
+    "#F57C00", "#0288D1", "#C2185B", "#00796B",
+];
+
+const randomCursorColor = (): string =>
+    CURSOR_COLORS[Math.floor(Math.random() * CURSOR_COLORS.length)];
+
 const EditorPage = () => {
     const { id } = useParams<{ id: string }>();
     const { showSnackbar } = useSnackbar();
+    const { user } = useAuth();
 
     const safeId = id ?? "";
-    const { document, isLoading, updateDocument, renameDocument, refetch } = useDocument(safeId);
+    const { document, isLoading, updateDocument, renameDocument } = useDocument(safeId);
     const {
         versions,
         isRestoring,
@@ -45,6 +58,17 @@ const EditorPage = () => {
     } = useVersions(safeId);
     const { collaborators, addCollaborator, removeCollaborator } = useCollaborators(safeId);
 
+    // Live collaboration session (Yjs doc + WebSocket provider) for this document.
+    const collab = useCollaboration(safeId);
+
+    // The local user's cursor label — name from auth, random color per session.
+    const collabUser = useMemo(() => {
+        const name = user
+            ? `${user.firstName} ${user.lastName}`.trim() || user.email
+            : "Anonymous";
+        return { name, color: randomCursorColor() };
+    }, [user]);
+
     const [editor, setEditor] = useState<Editor | null>(null);
     const [content, setContent] = useState<JSONContent>({ type: "doc", content: [] });
     const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -54,30 +78,26 @@ const EditorPage = () => {
 
     const [previewingVersionId, setPreviewingVersionId] = useState<string | null>(null);
     const [previewingVersionInfo, setPreviewingVersionInfo] = useState<{ savedByName: string; createdAt: string } | null>(null);
-    const [originalContentBeforePreview, setOriginalContentBeforePreview] = useState<string | null>(null);
+    const [previewContent, setPreviewContent] = useState<string | null>(null);
 
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
-
-    // Ref flag to suppress handleEditorUpdate when we're doing programmatic
-    // content changes (preview, exit preview, restore). Without this, every
-    // programmatic setContent() call would falsely mark the doc as unsaved.
-    const suppressUpdateRef = useRef<boolean>(false);
 
     const canEdit = document?.permission === "OWNER" || document?.permission === "EDIT";
     const canShare = document?.permission === "OWNER";
     const canManage = document?.permission === "OWNER";
     const canRestore = canEdit;
-    const isReadOnly = !canEdit || previewingVersionId !== null;
+    const isPreviewing = previewingVersionId !== null;
 
-    const handleAutoSave = useCallback(async (newContent: JSONContent) => {
-        if (!document || isReadOnly) return;
+    const handleAutoSave = useCallback(async () => {
+        if (!document || !canEdit || !editor) return;
         setSaveState("saving");
-        const plainTextLength = editor ? editor.getText().length : 0;
+        // Serialize the live editor (Yjs) state at save time — the source of
+        // truth — so concurrent remote edits are persisted, not a stale snapshot.
         try {
             await updateDocument({
                 title: document.title,
-                content: JSON.stringify(newContent),
-                contentLength: plainTextLength,
+                content: JSON.stringify(editor.getJSON()),
+                contentLength: editor.getText().length,
             });
             setSaveState("saved");
             setHasUnsavedChanges(false);
@@ -86,19 +106,19 @@ const EditorPage = () => {
             setSaveState("error");
             showSnackbar(getErrorMessage(err, "Failed to auto-save."), "error");
         }
-    }, [document, isReadOnly, editor, updateDocument, refetchVersions, showSnackbar]);
+    }, [document, canEdit, editor, updateDocument, refetchVersions, showSnackbar]);
 
     const { saveNow } = useAutoSave({
         data: content,
         onSave: handleAutoSave,
-        enabled: !isReadOnly && hasUnsavedChanges,
+        enabled: canEdit && hasUnsavedChanges,
         delay: 3000,
     });
 
     const handleManualSave = useCallback(async () => {
-        if (!hasUnsavedChanges || isReadOnly) return;
+        if (!hasUnsavedChanges || !canEdit) return;
         await saveNow();
-    }, [saveNow, isReadOnly, hasUnsavedChanges]);
+    }, [saveNow, canEdit, hasUnsavedChanges]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -133,17 +153,55 @@ const EditorPage = () => {
         };
     }, [hasUnsavedChanges, saveNow]);
 
-    // Editor content change handler — only fires for REAL user changes
-    // Programmatic setContent() calls are filtered out via suppressUpdateRef
-    const handleEditorUpdate = useCallback((newContent: JSONContent) => {
-        if (suppressUpdateRef.current) {
+    // Reset the hydration guard whenever we join a new room (new document).
+    const hydratedRef = useRef<boolean>(false);
+    useEffect(() => {
+        hydratedRef.current = false;
+    }, [collab]);
+
+    // Seed the DB content into the Yjs doc only if the room is still empty (we're
+    // the first client). An empty "default" fragment reliably means "fresh room"
+    // because y-prosemirror doesn't write the default empty paragraph back to Yjs.
+    // Gated on the provider's sync so we never seed on top of another client's state.
+    useEffect(() => {
+        if (!editor || collab.status !== "ready" || !document) return;
+        const { ydoc, provider } = collab;
+
+        const hydrate = () => {
+            if (hydratedRef.current) return;
+            hydratedRef.current = true;
+
+            if (ydoc.getXmlFragment("default").length > 0) return;
+            if (!document.content) return;
+
+            // emitUpdate:false → seed the Yjs doc without firing onUpdate, so
+            // hydration isn't mistaken for a user edit (no false "unsaved").
+            try {
+                editor.commands.setContent(JSON.parse(document.content) as JSONContent, { emitUpdate: false });
+            } catch {
+                editor.commands.setContent(document.content, { emitUpdate: false });
+            }
+        };
+
+        if (provider.synced) {
+            hydrate();
             return;
         }
-        if (isReadOnly) return;
+        const onSync = (isSynced: boolean) => {
+            if (isSynced) hydrate();
+        };
+        provider.on("sync", onSync);
+        return () => provider.off("sync", onSync);
+    }, [editor, collab, document]);
+
+    // Fires for local edits and for remote edits applied via Yjs — both should
+    // mark the doc dirty so this client persists the converged state.
+    const handleEditorUpdate = useCallback((newContent: JSONContent) => {
+        if (!canEdit) return;
         setContent(newContent);
         setHasUnsavedChanges(true);
         setSaveState("unsaved");
-    }, [isReadOnly]);
+    }, [canEdit]);
 
     const handleTitleSave = useCallback(async (newTitle: string) => {
         try {
@@ -159,57 +217,26 @@ const EditorPage = () => {
         setSidePanelOpen(true);
     };
 
-    // Helper that wraps editor.commands.setContent in suppression flag
-    // so the resulting update event doesn't falsely mark the doc as unsaved
-    const setEditorContentSilent = (newContent: JSONContent | string) => {
-        if (!editor) return;
-        suppressUpdateRef.current = true;
-        editor.commands.setContent(newContent);
-        setTimeout(() => {
-            suppressUpdateRef.current = false;
-        }, 0);
-    };
-
+    // Preview loads the version's content into a separate read-only editor
+    // (VersionPreview) — it never touches the live Yjs document.
     const handlePreviewVersion = async (versionId: string) => {
-        if (!editor || !document) return;
         try {
             const version = await versionAPI.getVersionContent(safeId, versionId);
-            if (previewingVersionId === null) {
-                setOriginalContentBeforePreview(document.content);
-            }
             setPreviewingVersionId(versionId);
             setPreviewingVersionInfo({
                 savedByName: version.savedByName,
                 createdAt: version.createdAt,
             });
-            if (version.content) {
-                try {
-                    setEditorContentSilent(JSON.parse(version.content) as JSONContent);
-                } catch {
-                    setEditorContentSilent(version.content);
-                }
-            } else {
-                setEditorContentSilent("");
-            }
+            setPreviewContent(version.content ?? null);
         } catch (err) {
             showSnackbar(getErrorMessage(err, "Failed to load version."), "error");
         }
     };
 
     const handleExitPreview = () => {
-        if (!editor) return;
-        if (originalContentBeforePreview) {
-            try {
-                setEditorContentSilent(JSON.parse(originalContentBeforePreview) as JSONContent);
-            } catch {
-                setEditorContentSilent(originalContentBeforePreview);
-            }
-        } else {
-            setEditorContentSilent("");
-        }
         setPreviewingVersionId(null);
         setPreviewingVersionInfo(null);
-        setOriginalContentBeforePreview(null);
+        setPreviewContent(null);
     };
 
     const handleRestoreFromBanner = async () => {
@@ -217,29 +244,27 @@ const EditorPage = () => {
         await handleRestoreVersion(previewingVersionId);
     };
 
+    // Restore: persist through the existing restore endpoint, then fully reset
+    // the live Yjs doc to the restored content. emitUpdate:false keeps THIS
+    // client clean (the endpoint already saved it); the reset still broadcasts
+    // so other clients converge. A plain page reload can't work here — the
+    // no-persistence relay keeps the room in memory, so a reconnect re-syncs to
+    // the stale live content instead of the restored DB content.
     const handleRestoreVersion = async (versionId: string) => {
+        if (!editor) return;
+        const restored = await restoreVersion(versionId);
+        if (!restored) return;
         try {
-            const restored = await restoreVersion(versionId);
-            if (restored && editor) {
-                if (restored.content) {
-                    try {
-                        setEditorContentSilent(JSON.parse(restored.content) as JSONContent);
-                    } catch {
-                        setEditorContentSilent(restored.content);
-                    }
-                } else {
-                    setEditorContentSilent("");
-                }
-            }
-            setPreviewingVersionId(null);
-            setPreviewingVersionInfo(null);
-            setOriginalContentBeforePreview(null);
-            setHasUnsavedChanges(false);
-            setSaveState("saved");
-            void refetch();
-        } catch (err) {
-            showSnackbar(getErrorMessage(err, "Failed to restore version."), "error");
+            editor.commands.setContent(
+                restored.content ? (JSON.parse(restored.content) as JSONContent) : "",
+                { emitUpdate: false },
+            );
+        } catch {
+            editor.commands.setContent(restored.content ?? "", { emitUpdate: false });
         }
+        handleExitPreview();
+        setHasUnsavedChanges(false);
+        setSaveState("saved");
     };
 
     const handleShare = async (request: ShareDocumentRequest) => {
@@ -269,7 +294,35 @@ const EditorPage = () => {
         return <Navigate to="/dashboard" replace />;
     }
 
-    if (isLoading || !document) {
+    // Auth gate: access check failed or was denied — never open the collab socket.
+    if (collab.status === "denied") {
+        return (
+            <Box
+                sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 2,
+                    minHeight: "calc(100vh - 60px)",
+                    px: 3,
+                    textAlign: "center",
+                }}
+            >
+                <Typography variant="h6" sx={{ fontFamily: "'Merriweather', serif", fontWeight: 700 }}>
+                    You don't have access to this document
+                </Typography>
+                <Typography variant="body2" sx={{ color: "text.secondary", maxWidth: 420 }}>
+                    Ask the owner to share it with you, then try again.
+                </Typography>
+                <Button variant="contained" href="/dashboard">
+                    Back to dashboard
+                </Button>
+            </Box>
+        );
+    }
+
+    if (isLoading || !document || collab.status !== "ready") {
         return (
             <Box
                 sx={{
@@ -396,7 +449,7 @@ const EditorPage = () => {
                     </Box>
                 )}
 
-                <EditorToolbar editor={editor} disabled={isReadOnly} />
+                <EditorToolbar editor={editor} disabled={!canEdit || isPreviewing} />
 
                 <Box
                     sx={{
@@ -422,12 +475,20 @@ const EditorPage = () => {
                             borderColor: "divider",
                         }}
                     >
-                        <TipTapEditor
-                            initialContent={document.content}
-                            editable={!isReadOnly}
-                            onUpdate={handleEditorUpdate}
-                            onEditorReady={setEditor}
-                        />
+                        {/* Live editor stays mounted (hidden) during preview so the
+                            collab session and remote-edit persistence keep running. */}
+                        <Box sx={{ display: isPreviewing ? "none" : "block" }}>
+                            <TipTapEditor
+                                key={safeId}
+                                ydoc={collab.ydoc}
+                                provider={collab.provider}
+                                user={collabUser}
+                                editable={canEdit}
+                                onUpdate={handleEditorUpdate}
+                                onEditorReady={setEditor}
+                            />
+                        </Box>
+                        {isPreviewing && <VersionPreview content={previewContent} />}
                     </Paper>
                 </Box>
             </Box>

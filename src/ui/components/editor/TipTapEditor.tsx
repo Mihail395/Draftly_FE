@@ -1,26 +1,24 @@
 import { useEffect } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Underline from "@tiptap/extension-underline";
-import TextAlign from "@tiptap/extension-text-align";
-import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
-import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
-import { TaskList, TaskItem } from "@tiptap/extension-list";
-import Placeholder from "@tiptap/extension-placeholder";
-import CharacterCount from "@tiptap/extension-character-count";
-import Typography from "@tiptap/extension-typography";
-import { Color } from "@tiptap/extension-color";
-import { TextStyle } from "@tiptap/extension-text-style";
-import Highlight from "@tiptap/extension-highlight";
+import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import type { Editor, JSONContent } from "@tiptap/react";
+import type * as Y from "yjs";
+import type { WebsocketProvider } from "y-websocket";
 import { Box } from "@mui/material";
 import BubbleMenuBar from "./BubbleMenuBar";
 import TableFloatingMenu from "./TableFloatingMenu";
+import { buildBaseExtensions } from "./editorExtensions";
 import "./Editor.css";
 
 interface TipTapEditorProps {
-    initialContent: string | null;
+    // Yjs document + provider that own the live, collaborative content.
+    // Content is NOT seeded via the `content` option (that would duplicate it
+    // across clients) — it lives in the shared Yjs doc.
+    ydoc: Y.Doc;
+    provider: WebsocketProvider;
+    // Cursor label for the local user (live cursors of remote users).
+    user: { name: string; color: string };
     editable: boolean;
     placeholder?: string;
     onUpdate?: (content: JSONContent) => void;
@@ -28,75 +26,29 @@ interface TipTapEditorProps {
 }
 
 const TipTapEditor = ({
-                          initialContent,
+                          ydoc,
+                          provider,
+                          user,
                           editable,
                           placeholder = "Start writing…",
                           onUpdate,
                           onEditorReady,
                       }: TipTapEditorProps) => {
-    // Parse the JSON string from the backend into TipTap content
-    const parseContent = (raw: string | null): JSONContent | string => {
-        if (!raw) return "";
-        try {
-            return JSON.parse(raw) as JSONContent;
-        } catch {
-            return raw;
-        }
-    };
-
     const editor = useEditor({
         editable,
-        content: parseContent(initialContent),
+        // No `content` here: the Collaboration extension owns the document
+        // content via the Yjs doc. Seeding `content` per client would
+        // duplicate text once multiple clients join the same room.
         extensions: [
-            StarterKit.configure({
-                // We add Link, Underline etc. separately for more control
-                link: false,
-                underline: false,
+            ...buildBaseExtensions(placeholder),
+            // Bind the editor to the shared Yjs doc and render remote users'
+            // live cursors via the provider awareness.
+            Collaboration.configure({
+                document: ydoc,
             }),
-            Underline,
-            TextAlign.configure({
-                types: ["heading", "paragraph"],
-            }),
-            // Link config fixes:
-            // - inclusive: false → typing after a link does NOT extend the link
-            // - openOnClick: false → don't open on regular click in edit mode
-            // - linkOnPaste: pasting a URL on selected text auto-links it
-            // - autolink: typing a URL converts it to a link automatically
-            Link.extend({
-                inclusive: false,
-            }).configure({
-                openOnClick: false,
-                autolink: true,
-                linkOnPaste: true,
-                defaultProtocol: "https",
-                HTMLAttributes: {
-                    rel: "noopener noreferrer",
-                    target: "_blank",
-                },
-            }),
-            Image.configure({
-                inline: false,
-                allowBase64: false,
-            }),
-            Table.configure({
-                resizable: true,
-            }),
-            TableRow,
-            TableHeader,
-            TableCell,
-            TaskList,
-            TaskItem.configure({
-                nested: true,
-            }),
-            Placeholder.configure({
-                placeholder,
-            }),
-            CharacterCount,
-            Typography,
-            TextStyle,
-            Color,
-            Highlight.configure({
-                multicolor: true,
+            CollaborationCaret.configure({
+                provider,
+                user,
             }),
         ],
         editorProps: {

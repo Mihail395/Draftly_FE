@@ -1,5 +1,5 @@
 import api from '../axios/axiosInstance'
-import type { UserResponse, UpdateUserRequest } from './types/user'
+import type {UserResponse, UpdateUserRequest, ChangePasswordRequest} from './types/user'
 import type { PageResponse } from './types/common'
 
 const userAPI = {
