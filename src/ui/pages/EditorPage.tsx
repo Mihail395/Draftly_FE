@@ -16,6 +16,7 @@ import DocumentBar from "../components/editor/DocumentBar";
 import EditorToolbar from "../components/editor/EditorToolbar";
 import TipTapEditor from "../components/editor/TipTapEditor";
 import VersionPreview from "../components/editor/VersionPreview";
+import { exportToPdf } from "../components/editor/exportToPdf";
 import EditorSidePanel from "../components/editor/side-panel/EditorSidePanel";
 import type { SidePanelTab } from "../components/editor/side-panel/EditorSidePanel";
 import type { SaveState } from "../components/editor/SaveStatus";
@@ -81,6 +82,7 @@ const EditorPage = () => {
     const [previewContent, setPreviewContent] = useState<string | null>(null);
 
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+    const [isExporting, setIsExporting] = useState<boolean>(false);
 
     const canEdit = document?.permission === "OWNER" || document?.permission === "EDIT";
     const canShare = document?.permission === "OWNER";
@@ -275,9 +277,22 @@ const EditorPage = () => {
         await removeCollaborator(email);
     };
 
-    const handleExport = () => {
-        showSnackbar("PDF export coming soon.", "info");
-    };
+    // Export reads the LIVE editor's HTML (the live editor stays mounted during
+    // preview), and is additionally disabled while previewing — so it always
+    // captures the live document, never a previewed version. Read-only: no save,
+    // no editor mutation, no Yjs interaction.
+    const handleExport = useCallback(async () => {
+        if (!editor || !document || isPreviewing || isExporting) return;
+        setIsExporting(true);
+        try {
+            await exportToPdf(editor.getHTML(), document.title);
+            showSnackbar("PDF exported.", "success");
+        } catch (err) {
+            showSnackbar(getErrorMessage(err, "Failed to export PDF."), "error");
+        } finally {
+            setIsExporting(false);
+        }
+    }, [editor, document, isPreviewing, isExporting, showSnackbar]);
 
     const formatPreviewDate = (iso: string): string => {
         const date = new Date(iso);
@@ -363,7 +378,9 @@ const EditorPage = () => {
                     onManualSave={() => void handleManualSave()}
                     onOpenHistory={() => openSidePanelTab("history")}
                     onOpenShare={() => openSidePanelTab("share")}
-                    onExport={handleExport}
+                    onExport={() => void handleExport()}
+                    isExporting={isExporting}
+                    exportDisabled={isPreviewing}
                 />
 
                 {previewingVersionId && previewingVersionInfo && (

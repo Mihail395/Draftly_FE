@@ -6,6 +6,7 @@ import {
     Tooltip,
     Button,
     Divider,
+    CircularProgress,
 } from "@mui/material";
 import HistoryIcon from "@mui/icons-material/History";
 import ShareOutlinedIcon from "@mui/icons-material/ShareOutlined";
@@ -25,6 +26,9 @@ interface DocumentBarProps {
     onOpenHistory: () => void;
     onOpenShare: () => void;
     onExport: () => void;
+    isExporting: boolean;
+    // Disable export while previewing an old version so we never export the wrong content.
+    exportDisabled: boolean;
 }
 
 const getPermissionColor = (permission: Permission): "primary" | "info" | "default" => {
@@ -44,6 +48,8 @@ const DocumentBar = ({
                          onOpenHistory,
                          onOpenShare,
                          onExport,
+                         isExporting,
+                         exportDisabled,
                      }: DocumentBarProps) => {
     const canEdit = permission === "OWNER" || permission === "EDIT";
     const canShare = permission === "OWNER";
@@ -141,18 +147,26 @@ const DocumentBar = ({
                         </IconButton>
                     </Tooltip>
 
-                    <Tooltip title="Export as PDF (TODO)">
+                    <Tooltip title={exportDisabled ? "Exit preview to export" : "Export as PDF"}>
                         <span>
                             <IconButton
                                 size="small"
                                 onClick={onExport}
-                                disabled
+                                disabled={isExporting || exportDisabled}
                                 sx={{
                                     borderRadius: 1,
                                     color: "text.primary",
+                                    "&:hover": {
+                                        backgroundColor: "rgba(43, 87, 154, 0.08)",
+                                        color: "primary.main",
+                                    },
                                 }}
                             >
-                                <FileDownloadOutlinedIcon fontSize="small" />
+                                {isExporting ? (
+                                    <CircularProgress size={18} thickness={5} />
+                                ) : (
+                                    <FileDownloadOutlinedIcon fontSize="small" />
+                                )}
                             </IconButton>
                         </span>
                     </Tooltip>

@@ -112,7 +112,7 @@ const ImageUploadDialog = ({ open, onClose, onConfirm }: ImageUploadDialogProps)
                     }}
                     onKeyDown={handleKeyPress}
                     error={!!error}
-                    helperText={error || "TODO: File upload support coming later"}
+                    //helperText={error || "TODO: File upload support coming later"}
                 />
             </DialogContent>
 

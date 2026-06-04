@@ -33,7 +33,9 @@
     "@tiptap/react": "^3.23.6",
     "@tiptap/starter-kit": "^3.23.6",
     "axios": "1.16.1",
+    "html-to-pdfmake": "2.5.33",
     "mammoth": "^1.8.0",
+    "pdfmake": "0.2.23",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-hook-form": "7.76.1",
@@ -45,6 +47,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.12.3",
+    "@types/pdfmake": "0.2.11",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",

@@ -12,10 +12,12 @@ React + TypeScript + Vite app for "Draftly" — a Google Docs-like collaborative
 - React Hook Form 7.76.1 (pinned, no `^`)
 - axios 1.16.1 (pinned, no `^` — supply chain safety)
 - npm `.npmrc`: `min-release-age=3`
-- (PLANNED for collaboration) yjs, y-websocket, y-prosemirror,
-  @tiptap/extension-collaboration, @tiptap/extension-collaboration-cursor
-- Mammoth (planned for .docx import — not yet integrated)
-- jspdf was removed temporarily — will re-add for PDF export later
+- Collaboration (INSTALLED): `yjs` 13.6.31, `y-websocket` 3.0.0, `y-prosemirror` 1.3.7,
+  `@tiptap/extension-collaboration` + `@tiptap/extension-collaboration-caret` (note: `-caret`, the TipTap v3
+  rename of the old `-cursor` extension)
+- Mammoth (installed, planned for .docx import — not yet integrated)
+- PDF export (INSTALLED): `pdfmake` 0.2.23 + `html-to-pdfmake` 2.5.33 (pinned), dev `@types/pdfmake` 0.2.11.
+  (jspdf was never re-added — pdfmake gives searchable text-based PDFs instead.)
 
 ## Project Structure
 
@@ -32,12 +34,13 @@ src/
 │   ├── AuthContext.tsx (incl. refreshUser), SnackbarContext.tsx
 ├── hooks/
 │   ├── useAuth, useDocuments (paginated), useDocument, useCollaborators, useVersions (paginated),
-│   │   useProfile, useSnackbar, useDebounce, useAutoSave, useInView
+│   │   useProfile, useSnackbar, useDebounce, useAutoSave, useInView, useCollaboration (Yjs gate+session)
 ├── providers/
 │   ├── AuthProvider.tsx (incl. refreshUser), SnackbarProvider.tsx
 ├── theme.ts  (MUI theme — primary #2B579A Word blue, Merriweather serif headings,
 │              Source Sans 3 body. Use MuiCssBaseline not CssBaseline)
 ├── tiptap.d.ts  (TipTap type references for all extensions — fixes TS errors with chain commands)
+├── html-to-pdfmake.d.ts  (ambient type shim — html-to-pdfmake ships no types)
 ├── App.tsx, main.tsx
 └── ui/
     ├── components/
@@ -50,8 +53,10 @@ src/
     │   │                   NewDocumentDialog, RenameDialog, DeleteConfirmDialog
     │   ├── editor/         Editor.css (TipTap content styles), SaveStatus, EditableTitle,
     │   │   │               LinkDialog, ImageUploadDialog, ColorPickerButton,
-    │   │   │               EditorToolbar, BubbleMenuBar, TipTapEditor, DocumentBar,
-    │   │   │               TableFloatingMenu
+    │   │   │               EditorToolbar, BubbleMenuBar, TipTapEditor (live/collaborative),
+    │   │   │               VersionPreview (read-only, non-collab), editorExtensions.ts
+    │   │   │               (shared buildBaseExtensions), exportToPdf.ts (PDF export util),
+    │   │   │               DocumentBar, TableFloatingMenu
     │   │   └── side-panel/ EditorSidePanel (tabbed drawer), HistoryPanel (with preview/restore),
     │   │                   CollaboratorsPanel, SharePanel (debounced user search)
     │   ├── landing/        FeatureRow, landingColors.ts, mockups/ (HeroEditorMock, AutoSaveMock,
@@ -116,61 +121,67 @@ src/
 
 ### Editor (most complex page)
 - **DocumentBar** (NOT sticky — scrolls away) — title (inline editable), save status, permission badge, History/Share/Export/Save buttons
+- **PDF export** (Export button) — `exportToPdf.ts` converts `editor.getHTML()` via pdfmake + html-to-pdfmake
+  into a searchable, text-based PDF approximating the editor theme (Roboto embedded; fonts approximated by
+  size/weight). Read-only (no save/editor/Yjs side effects); disabled during version preview so it always
+  captures the LIVE doc; shows a spinner while generating. Images are NOT embedded yet (URL-only images can't
+  be fetched by pdfmake) — replaced with a placeholder; real embedding will come with image file upload.
 - **EditorToolbar** (sticky at `top: 60`) — TipTap formatting controls, takes over the DocumentBar position when scrolling
 - **Preview Banner** (sticky at `top: 108`, below toolbar) — shown when previewing an older version, has Exit/Restore buttons
 - **Paper-like centered editor surface** (max-width 880px, generous padding)
-- **TipTap v3** with extensions: StarterKit (link disabled, underline disabled — added separately),
-  Underline, TextAlign, Link (extended with `inclusive: false`), Image, Table set, TaskList/Item,
-  Placeholder, CharacterCount, Typography, TextStyle, Color, Highlight
+- **Shared extension set in `editorExtensions.ts`** (`buildBaseExtensions`): StarterKit (link/underline
+  disabled — added separately; `undoRedo: false` since Yjs owns history), Underline, TextAlign, Link
+  (extended with `inclusive: false`), Image, Table set, TaskList/Item, Placeholder, CharacterCount,
+  Typography, TextStyle, Color, Highlight. Both the live `TipTapEditor` and read-only `VersionPreview`
+  reuse it so they render identically; the live editor additionally adds Collaboration + CollaborationCaret.
 - **Custom keyboard handling**: Tab indents in lists / inserts spaces in text, Ctrl+Click opens links in new tab
-- **Auto-save** every 3s after stop typing + manual Ctrl+S; sends contentLength (editor.getText().length)
+- **Auto-save** every 3s after stop typing + manual Ctrl+S; serializes the live Yjs editor state at save time
+  (`editor.getJSON()`) + sends contentLength (`editor.getText().length`)
 - **SaveStatus** next to title (pill style): Saved (green) / Saving / Unsaved / Error
 - **BubbleMenuBar** dark pill appears on text selection with Bold/Italic/Underline/Strike/Code/Link/RemoveLink
 - **TableFloatingMenu** appears at bottom when cursor inside table — add/remove rows/cols, delete table
 - **Right side panel** (persistent Drawer 380px, pushes editor) with tabs: History, People, Share
-- **Version preview** loads version content into editor read-only; main page banner shows when previewing
-- **Image upload** by URL only (file upload = TODO)
+- **Version preview** renders into a SEPARATE read-only `VersionPreview` editor (no Yjs binding); the live
+  editor stays mounted but hidden so the collab session + remote-edit persistence keep running during preview
+- **Image upload** by URL only (file upload = current-focus TODO)
 - Editor saves on `visibilitychange` (tab switch) in addition to beforeunload
 
 ### Save Status Management
 - Single source of truth: `EditorPage` manages `saveState` directly inside `handleAutoSave`
 - `setSaveState("saving")` at start of save, `setSaveState("saved")` on success, `setSaveState("error")` on failure
-- `suppressUpdateRef` (useRef) prevents programmatic content changes (preview/restore) from falsely marking unsaved
-- `setEditorContentSilent()` helper wraps `editor.commands.setContent()` calls to set the suppression flag
 - `useDocument` hook does NOT show success snackbar on save; re-throws errors so EditorPage sets error state
-- NOTE: the suppressUpdateRef + setEditorContentSilent machinery will be RETIRED when collaboration lands
-  (see Real-Time Collaboration section — live restore is dropped)
+- NOTE: the old `suppressUpdateRef` + `setEditorContentSilent()` machinery was RETIRED when collaboration landed.
+  Programmatic content writes now pass `{ emitUpdate: false }` to `editor.commands.setContent()` (used by Yjs
+  hydration and restore) so they don't falsely mark the doc unsaved. Preview no longer touches the live editor.
 
-## Real-Time Collaboration (Yjs — Option 2 auth)  [PLANNED / IN PROGRESS]
+## Real-Time Collaboration (Yjs — Option 2 auth)  [IMPLEMENTED]
 
-Adding live multi-user editing + live cursors via Yjs. Decisions:
+Live multi-user editing + live cursors via Yjs. How it works:
 
 - **Libraries:** `yjs`, `y-websocket`, `y-prosemirror`, `@tiptap/extension-collaboration`,
-  `@tiptap/extension-collaboration-cursor`
-- **Yjs is the LIVE layer only.** The Spring Boot `documents` table stays the real storage. The live Yjs
-  doc is serialized to text and saved through the EXISTING save flow (`PUT /api/v1/documents/{id}`).
-- **Sync server:** a SEPARATE Node process at `Draftly/collab-server` running `@y/websocket-server` (the
-  maintained successor to the old bundled server), in-memory relay on ws://localhost:1234, no auth/persistence.
-  IMPORTANT: the FRONTEND installs and imports the stable `y-websocket` package for `WebsocketProvider`
-  (`import { WebsocketProvider } from 'y-websocket'`) — this is unchanged. Only the relay SERVER uses
-  `@y/websocket-server`. Do not confuse the two..
-- **Auth (Option 2):** before opening the WebSocket, the frontend makes an authenticated REST call to Spring
-  Boot asking "may I access document X?". Only on yes does it open the Yjs `WebsocketProvider`. The Node
-  server stays a dumb unauthenticated relay.
-- **Version history is NON-LIVE.** Snapshots are saved copies of serialized content (existing flow).
-  Restore = reload the doc from saved content, NOT injection into the live Yjs session. Live restore dropped.
-
-### Required editor changes (when implementing)
-- Disable StarterKit `history` (Yjs Collaboration owns undo/redo) — add `history: false` to StarterKit.configure
-- Stop setting editor `content` directly; instead hydrate initial content into the Yjs doc on load
-- Remove/retire the `suppressUpdateRef` + `setEditorContentSilent()` preview-restore machinery (live restore dropped)
-- Keep existing extensions (Tab-in-lists, link mark `inclusive: false`, etc.) — unaffected
-- Add Collaboration + CollaborationCursor extensions bound to the Yjs doc + provider awareness
-
-### Persistence note
-The Yjs relay is transient/in-memory. If all clients disconnect from a document, the relay loses that doc's
-live state; the next client to open it rehydrates the Yjs doc from the DB content. Expected and acceptable
-for this local project.
+  `@tiptap/extension-collaboration-caret` (the TipTap v3 rename of `-cursor`). The frontend imports
+  `WebsocketProvider` from the stable `y-websocket` package — only the relay SERVER uses `@y/websocket-server`.
+- **Sync server:** a SEPARATE Node process at `Draftly/collab-server` running `@y/websocket-server`, in-memory
+  relay on `ws://localhost:1234`, no auth/persistence. Must be running for live editing; start with its npm
+  `start` script.
+- **`useCollaboration(documentId)` hook** is the gate + session: it calls `documentAPI.checkCollabAccess` FIRST,
+  and only on `allowed=true` creates the `Y.Doc` + `WebsocketProvider` (room name = document id). Returns
+  `{ status: "loading" | "denied" | "ready", ydoc, provider, permission }`. Any failure fails CLOSED (denied),
+  so the socket never opens without confirmed access. EditorPage shows a "no access" screen on `denied`.
+- **`TipTapEditor` is bound to the Yjs doc** via Collaboration + CollaborationCaret — it takes `ydoc`/`provider`/
+  `user` props and does NOT use the `content` option (content lives in the shared Yjs doc; seeding `content`
+  per client would duplicate text). Cursor label = user's name + a random per-session color (`CURSOR_COLORS`).
+- **Hydration:** EditorPage seeds DB content into the Yjs doc only if the room is still empty (first client),
+  gated on `provider.synced`, using `setContent(..., { emitUpdate: false })`. `hydratedRef` guards against
+  re-seeding. This avoids duplicating content when joining an existing room.
+- **Save:** auto-save serializes the LIVE editor state (`editor.getJSON()`) so concurrent remote edits are
+  persisted, not a stale snapshot. Saved through the existing `PUT /api/v1/documents/{id}` flow.
+- **Version history is NON-LIVE.** Preview renders into a separate read-only `VersionPreview` editor (no Yjs).
+  Restore persists via the existing restore endpoint, then RESETS the live Yjs doc to the restored content with
+  `setContent(..., { emitUpdate: false })` (so other clients converge) — a page reload can't work because the
+  no-persistence relay keeps the stale room in memory. See memory note "Restore resets live Yjs".
+- **Persistence model:** the relay is transient/in-memory. When all clients disconnect, the relay loses that
+  doc's live state; the next client rehydrates from DB content. Expected and acceptable for this local project.
 
 ## MUI v6 Migration Notes (Critical)
 
@@ -196,7 +207,8 @@ for this local project.
 ## Recent Work Completed (Reference)
 
 1. **Save status** — single source of truth in EditorPage.handleAutoSave; SaveStatus is a pill (green when saved)
-2. **Preview/restore** — suppressUpdateRef + setEditorContentSilent prevent false "unsaved" (TO BE RETIRED with collab)
+2. **Preview/restore** — now uses a separate read-only VersionPreview editor; restore resets the live Yjs doc
+   (old suppressUpdateRef/setEditorContentSilent machinery RETIRED — see Save Status Management note)
 3. **Toolbar/DocumentBar scroll** — DocumentBar not sticky, EditorToolbar sticky at top:60
 4. **Content length to frontend** — handleAutoSave sends editor.getText().length as contentLength
 5. **Pagination** — useDocuments + useVersions paginated; MUI Pagination on dashboard + history panel
@@ -205,22 +217,24 @@ for this local project.
 8. **Landing page** — full build with mockups + scroll animations
 9. **Profile page** — two-column settings with name edit + change password + logout
 10. **refreshUser in AuthContext** — name changes propagate to navbar/sidebar instantly
+11. **Real-time collaboration (Yjs)** — useCollaboration gate+session, Yjs-bound TipTapEditor with live cursors,
+    DB→Yjs hydration, separate VersionPreview, collab-server relay; see Real-Time Collaboration section
+12. **PDF export** — `exportToPdf.ts` (pdfmake + html-to-pdfmake) renders `editor.getHTML()` to a searchable
+    text-based PDF; wired to the DocumentBar Export button with spinner + snackbars; see Editor section
 
 ## Open TODOs (Frontend)
 
-### Collaboration (current focus)
-- Install Yjs deps; add Collaboration + CollaborationCursor extensions
-- Gate WebsocketProvider on the Spring Boot collab-access check (Option 2)
-- Disable StarterKit history; hydrate into Yjs; retire suppressUpdateRef/setEditorContentSilent
-- See Real-Time Collaboration section
+### Current focus
+- **Image file upload in editor** — let users add images by uploading a file, not just by URL. Extend
+  ImageUploadDialog with a file-upload path; needs the backend image upload endpoint first (see backend CLAUDE.md).
+  Once images are served from the backend, also embed them in PDF export (exportToPdf.ts currently replaces
+  images with a placeholder since remote-URL images can't be fetched by pdfmake).
 
 ### Known minor console warnings (low priority)
 - `<button> inside <button>` in DocumentCard (CardActionArea wraps an IconButton) — needs component="div" fix
 - TipTap "Duplicate extension: underline" — fix by adding `underline: false` to StarterKit.configure
 
 ### Other TODOs
-- PDF export (jsPDF + html2canvas) — removed from deps, need to re-add
-- File upload for images (currently URL only) — needs backend endpoint first
 - `.docx`/`.md`/`.txt` import using mammoth
 - Code-split editor page via `React.lazy()` for smaller initial dashboard bundle
 
